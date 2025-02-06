@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package substrate;
+
+import "google/protobuf/any.proto";
+
+option go_package = "pkg/event";
+
+message EventBridgeEvent {
+    string version = 1 [json_name = "version"];              // Version
+    string id = 2 [json_name = "id"];                        // ID
+    string source = 3 [json_name = "source"];                // Source
+    string account = 4 [json_name = "account"];              // Account
+    string time = 5 [json_name = "time"];                    // Time
+    string region = 6 [json_name = "region"];                // Region
+    repeated string resources = 7 [json_name = "resources"]; // Resources
+    string detailType = 8 [json_name = "detail-type"];       // Detail type
+    Transport detail = 9 [json_name = "detail"];             // Detail
+}
+
+message Header {
+    string substrate = 1;             // Substrate name
+    repeated string features = 2;     // Substrate feature flags
+    string source = 3;                // Substrate source
+    repeated string destination = 4;  // Substrate destination
+}
+
+message Transport {
+    Header header = 1;            // Header
+    google.protobuf.Any body = 2; // Body
+}
