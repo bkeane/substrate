@@ -87,12 +87,12 @@ func GetImageFromUri(ctx context.Context, awsconfig aws.Config, imageUri string)
 	uri, digest := strings.Split(imageUri, "@")[0], strings.Split(imageUri, "@")[1]
 	url, err := url.Parse(uri)
 	if err != nil {
-		return ImagePointer{}, fmt.Errorf("failed while parsing image uri: %w", err)
+		return ImagePointer{}, err
 	}
 
 	reg, err := Init(ctx, awsconfig, url.Host)
 	if err != nil {
-		return ImagePointer{}, fmt.Errorf("failed while initializing registry: %w", err)
+		return ImagePointer{}, err
 	}
 
 	return reg.GetImageFromName(ctx, strings.TrimPrefix(url.Path, "/"), digest)
@@ -105,7 +105,7 @@ func Init(ctx context.Context, awsconfig aws.Config, url string) (*Registry, err
 	ecrc := ecr.NewFromConfig(awsconfig)
 	ecrauth, err := ecrc.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get authorization token: %w", err)
+		return nil, err
 	}
 
 	r.token = *ecrauth.AuthorizationData[0].AuthorizationToken
@@ -120,13 +120,13 @@ func (r *Registry) GetRepositories(ctx context.Context) (Catalogue, error) {
 	req.Header.Add("Authorization", "Basic "+r.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Catalogue{}, fmt.Errorf("failed while getting repositories: %w", err)
+		return Catalogue{}, err
 	}
 	defer resp.Body.Close()
 
 	var catalogue Catalogue
 	if err := json.NewDecoder(resp.Body).Decode(&catalogue); err != nil {
-		return Catalogue{}, fmt.Errorf("failed while decoding catalogue: %w", err)
+		return Catalogue{}, err
 	}
 
 	return catalogue, nil
@@ -139,13 +139,13 @@ func (r *Registry) GetTags(ctx context.Context, repository string) (Tags, error)
 	req.Header.Add("Authorization", "Basic "+r.token)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return Tags{}, fmt.Errorf("failed while getting tags: %w", err)
+		return Tags{}, err
 	}
 	defer resp.Body.Close()
 
 	var tags Tags
 	if err := json.NewDecoder(resp.Body).Decode(&tags); err != nil {
-		return Tags{}, fmt.Errorf("failed while decoding tags: %w", err)
+		return Tags{}, err
 	}
 
 	return tags, nil
@@ -154,12 +154,12 @@ func (r *Registry) GetTags(ctx context.Context, repository string) (Tags, error)
 func (r *Registry) GetImageFromName(ctx context.Context, repository string, reference string) (ImagePointer, error) {
 	jsonString, err := r.DigImage(ctx, repository, reference)
 	if err != nil {
-		return ImagePointer{}, fmt.Errorf("%s:%s: %w", repository, reference, err)
+		return ImagePointer{}, err
 	}
 
 	var pointer ImagePointer
 	if err := json.Unmarshal([]byte(jsonString), &pointer); err != nil {
-		return ImagePointer{}, fmt.Errorf("%s:%s: %w", repository, reference, err)
+		return ImagePointer{}, err
 	}
 
 	return pointer, nil
@@ -168,7 +168,7 @@ func (r *Registry) GetImageFromName(ctx context.Context, repository string, refe
 func (r *Registry) DigImage(ctx context.Context, repository string, reference string) (string, error) {
 	resp, err := r.GetManifest(ctx, repository, reference)
 	if err != nil {
-		return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+		return "", err
 	}
 	defer resp.Body.Close()
 
@@ -176,7 +176,7 @@ func (r *Registry) DigImage(ctx context.Context, repository string, reference st
 	case DOCKER_MANIFEST_INDEX, OCI_MANIFEST_INDEX:
 		var index ImageIndex
 		if err := json.NewDecoder(resp.Body).Decode(&index); err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 
 		var digest string
@@ -200,29 +200,29 @@ func (r *Registry) DigImage(ctx context.Context, repository string, reference st
 	case DOCKER_MANIFEST, OCI_MANIFEST:
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 
 		hasher := sha256.New()
 		if _, err := io.Copy(hasher, bytes.NewReader(bodyBytes)); err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 		digest := "sha256:" + hex.EncodeToString(hasher.Sum(nil))
 
 		var manifest ImageManifest
 		if err := json.NewDecoder(bytes.NewReader(bodyBytes)).Decode(&manifest); err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 
 		resp, err := r.GetConfig(ctx, repository, manifest.Config.Digest)
 		if err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 		defer resp.Body.Close()
 
 		var pointer ImagePointer
 		if err := json.NewDecoder(resp.Body).Decode(&pointer); err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 
 		pointer.Registry = r.url
@@ -232,7 +232,7 @@ func (r *Registry) DigImage(ctx context.Context, repository string, reference st
 
 		jsonBytes, err := json.Marshal(pointer)
 		if err != nil {
-			return "", fmt.Errorf("%s:%s: %w", repository, reference, err)
+			return "", err
 		}
 
 		return string(jsonBytes), nil
@@ -250,11 +250,11 @@ func (r *Registry) GetManifest(ctx context.Context, repository string, reference
 	req.Header.Add("Accept", strings.Join([]string{DOCKER_MANIFEST_INDEX, DOCKER_MANIFEST, OCI_MANIFEST_INDEX, OCI_MANIFEST}, ","))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s:%s: %w", repository, reference, err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status code %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get image manifest: status %d", resp.StatusCode)
 	}
 
 	return resp, nil
@@ -268,11 +268,11 @@ func (r *Registry) GetConfig(ctx context.Context, repository string, reference s
 	req.Header.Add("Accept", strings.Join([]string{OCI_CONFIG_MANIFEST}, ","))
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("%s:%s: %w", repository, reference, err)
+		return nil, err
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s:%s: %w", repository, reference, err)
+		return nil, fmt.Errorf("failed to get image config: status %d", resp.StatusCode)
 	}
 
 	return resp, nil
